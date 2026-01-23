@@ -40,6 +40,8 @@ def get_dynamic_op_number(ward_id: str) -> int:
     """
     Returns a dynamic OP number for the ward, changing every minute,
     out of sync for each ward using ward-specific offset.
+    
+    When the total OP exceeds 99, it rolls back to 1 and continues incrementing.
     """
     base = WARD_BASE_OP.get(ward_id, 0)
     now = datetime.now()
@@ -47,7 +49,11 @@ def get_dynamic_op_number(ward_id: str) -> int:
     offset = hash(ward_id) % 7
     minute = now.minute
     # OP number changes every minute, different phase per ward
-    return base + ((minute + offset) % 10)
+    raw_op = base + ((minute + offset) % 10)
+    # Rollback logic: when OP exceeds 99, roll back to 1 and continue
+    if raw_op > 99:
+        return ((raw_op - 1) % 99) + 1
+    return raw_op
 
 
 WARDS_DATA: dict[str, WardStatus] = {

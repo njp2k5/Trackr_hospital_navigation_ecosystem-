@@ -29,14 +29,14 @@ async def get_ward_staff(ward_id: str) -> WardStaffResponse:
     and the count of nurses currently on duty.
     
     Args:
-        ward_id: The unique identifier of the ward (e.g., "ER", "ICU")
+        ward_id: The unique identifier of the ward (e.g., "ER", "CASUALTY")
     """
     staff = get_staff_by_ward_id(ward_id)
     
     if staff is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Ward '{ward_id}' not found. Available wards: ER, ICU, GENERAL, PEDIATRIC, MATERNITY, SURGERY, CARDIOLOGY"
+            detail=f"Ward '{ward_id}' not found. Available wards: ER, CASUALTY, GENERAL, PEDIATRIC, MATERNITY, SURGERY, CARDIOLOGY"
         )
     
     return staff

@@ -13,6 +13,43 @@ from models import (
 
 # -------------------- Ward Data --------------------
 
+# Base OP numbers for each ward (used for dynamic calculation)
+WARD_BASE_OP: dict[str, int] = {
+    "ER": 42,
+    "CASUALTY": 15,
+    "GENERAL": 78,
+    "PEDIATRIC": 23,
+    "MATERNITY": 12,
+    "SURGERY": 8,
+    "CARDIOLOGY": 31,
+}
+
+# Static ward data (beds info)
+WARDS_STATIC: dict[str, dict] = {
+    "ER": {"total_beds": 50, "occupied_beds": 52},  # Over capacity for demo
+    "CASUALTY": {"total_beds": 20, "occupied_beds": 18},
+    "GENERAL": {"total_beds": 100, "occupied_beds": 72},
+    "PEDIATRIC": {"total_beds": 30, "occupied_beds": 21},
+    "MATERNITY": {"total_beds": 25, "occupied_beds": 19},
+    "SURGERY": {"total_beds": 15, "occupied_beds": 14},
+    "CARDIOLOGY": {"total_beds": 35, "occupied_beds": 28},
+}
+
+
+def get_dynamic_op_number(ward_id: str) -> int:
+    """
+    Returns a dynamic OP number for the ward, changing every minute,
+    out of sync for each ward using ward-specific offset.
+    """
+    base = WARD_BASE_OP.get(ward_id, 0)
+    now = datetime.now()
+    # Each ward gets a different offset based on its name hash
+    offset = hash(ward_id) % 7
+    minute = now.minute
+    # OP number changes every minute, different phase per ward
+    return base + ((minute + offset) % 10)
+
+
 WARDS_DATA: dict[str, WardStatus] = {
     "ER": WardStatus(
         ward_id="ER",
@@ -20,8 +57,8 @@ WARDS_DATA: dict[str, WardStatus] = {
         total_beds=50,
         occupied_beds=52,  # Over capacity for demo
     ),
-    "ICU": WardStatus(
-        ward_id="ICU",
+    "CASUALTY": WardStatus(
+        ward_id="CASUALTY",
         current_op_number=15,
         total_beds=20,
         occupied_beds=18,
@@ -72,8 +109,8 @@ STAFF_DATA: dict[str, WardStaffResponse] = {
         ),
         nurses_on_duty=15,
     ),
-    "ICU": WardStaffResponse(
-        ward_id="ICU",
+    "CASUALTY": WardStaffResponse(
+        ward_id="CASUALTY",
         doctors=DoctorsInfo(
             on_duty=["Dr. Rao", "Dr. Mehta"],
             absent=[
@@ -149,7 +186,7 @@ def get_maintenance_data() -> list[MaintenanceActivity]:
         ),
         MaintenanceActivity(
             type="hvac",
-            location="ICU Floor",
+            location="CASUALTY Floor",
             status="scheduled",
             expected_completion=now + timedelta(hours=5),
         ),
@@ -194,13 +231,29 @@ def get_alerts_data() -> list[Alert]:
 # -------------------- Helper Functions --------------------
 
 def get_all_wards() -> list[WardStatus]:
-    """Get status of all wards."""
-    return list(WARDS_DATA.values())
+    """Get status of all wards with dynamic OP numbers."""
+    return [
+        WardStatus(
+            ward_id=ward_id,
+            current_op_number=get_dynamic_op_number(ward_id),
+            total_beds=WARDS_STATIC[ward_id]["total_beds"],
+            occupied_beds=WARDS_STATIC[ward_id]["occupied_beds"],
+        )
+        for ward_id in WARDS_STATIC
+    ]
 
 
 def get_ward_by_id(ward_id: str) -> WardStatus | None:
-    """Get status of a specific ward."""
-    return WARDS_DATA.get(ward_id.upper())
+    """Get status of a specific ward with dynamic OP number."""
+    ward_id = ward_id.upper()
+    if ward_id not in WARDS_STATIC:
+        return None
+    return WardStatus(
+        ward_id=ward_id,
+        current_op_number=get_dynamic_op_number(ward_id),
+        total_beds=WARDS_STATIC[ward_id]["total_beds"],
+        occupied_beds=WARDS_STATIC[ward_id]["occupied_beds"],
+    )
 
 
 def get_staff_by_ward_id(ward_id: str) -> WardStaffResponse | None:
@@ -211,7 +264,7 @@ def get_staff_by_ward_id(ward_id: str) -> WardStaffResponse | None:
 def get_wards_over_capacity() -> list[str]:
     """Get list of ward IDs that are over capacity."""
     return [
-        ward.ward_id
-        for ward in WARDS_DATA.values()
-        if ward.occupied_beds > ward.total_beds
+        ward_id
+        for ward_id, data in WARDS_STATIC.items()
+        if data["occupied_beds"] > data["total_beds"]
     ]

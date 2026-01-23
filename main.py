@@ -20,10 +20,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Configure CORS for dashboard frontend access
+# Configure CORS for dashboard frontend and mobile app access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],  # Allows all origins (including mobile apps); restrict in production as needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

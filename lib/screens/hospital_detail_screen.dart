@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hospital_nav_app/screens/find_route_screen.dart';
+import 'package:hospital_nav_app/screens/hospital_info_screen.dart';
+import 'package:hospital_nav_app/screens/street_map_screen.dart';
 
 // Light theme color palette (shared with search screen)
 class AppColors {
@@ -35,7 +37,7 @@ class HospitalDetailScreen extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            _LightAppBar(title: hospitalName),
+            _LightAppBar(title: hospitalName, hospitalName: hospitalName),
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -57,9 +59,10 @@ class HospitalDetailScreen extends StatelessWidget {
 }
 
 class _LightAppBar extends StatelessWidget {
-  const _LightAppBar({required this.title});
+  const _LightAppBar({required this.title, required this.hospitalName});
 
   final String title;
+  final String hospitalName;
 
   @override
   Widget build(BuildContext context) {
@@ -93,13 +96,22 @@ class _LightAppBar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              shape: BoxShape.circle,
+          GestureDetector(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => HospitalInfoScreen(hospitalName: hospitalName),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.info_outline, color: AppColors.primary, size: 20),
             ),
-            child: const Icon(Icons.qr_code_scanner, color: AppColors.primary, size: 20),
           ),
         ],
       ),
@@ -476,16 +488,13 @@ class _BottomActionBar extends StatelessWidget {
         children: [
           Expanded(
             child: _ActionButton(
-              icon: Icons.map_outlined,
-              label: 'View Map',
+              icon: Icons.streetview,
+              label: 'Street Map',
               isPrimary: false,
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Opening hospital map...'),
-                    backgroundColor: AppColors.primary,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const StreetMapScreen(),
                   ),
                 );
               },

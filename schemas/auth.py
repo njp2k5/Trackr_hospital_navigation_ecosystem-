@@ -1,10 +1,10 @@
 from pydantic import BaseModel
 
-class UserCreate(BaseModel):
+class HospitalUserCreate(BaseModel):
     username: str
     password: str
 
-class Token(BaseModel):
+class HospitalAuthToken(BaseModel):
     access_token: str
     token_type: str
     email: str

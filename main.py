@@ -6,13 +6,13 @@ from db.base import Base
 print("imported base")
 from db.session import engine
 print("imported engine")
-from models.user import User
-print("imported user model")
+from models.user import HospitalUser
+print("imported hospital user model")
 
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Multi Agent Insurance Claim Validation System")
+    app = FastAPI(title="Hospital Navigation System API")
 
     @app.on_event("startup")
     def startup() -> None:

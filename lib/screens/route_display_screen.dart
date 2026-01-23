@@ -42,6 +42,16 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
   late List<Offset> _routePoints;
   late List<DestinationMarker> _destinationMarkers;
   bool _showCorridors = false; // Debug: show corridor network
+  
+  // Zoom and pan controls
+  final TransformationController _transformationController = TransformationController();
+  double _currentZoom = 1.0;
+  
+  // Calibration mode
+  bool _isCalibrationMode = false;
+  bool _isCalibrationLocked = false;
+  Map<int, Offset> _calibratedPositions = {};
+  int? _selectedMarkerId;
 
   @override
   void initState() {
@@ -58,6 +68,9 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     
     // Get destination markers for display
     _destinationMarkers = _routingService.getDestinationMarkers();
+    
+    // Initialize calibrated positions from current destinations
+    _initializeCalibratedPositions();
     
     // Animation controller for route drawing
     _animationController = AnimationController(
@@ -76,11 +89,174 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
         _animationController.forward();
       }
     });
+    
+    // Listen to transformation changes
+    _transformationController.addListener(_onTransformChanged);
+  }
+
+  void _initializeCalibratedPositions() {
+    _calibratedPositions = {};
+    for (final marker in _destinationMarkers) {
+      _calibratedPositions[marker.id] = marker.position;
+    }
+  }
+
+  void _onTransformChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if (scale != _currentZoom) {
+      setState(() {
+        _currentZoom = scale;
+      });
+    }
+  }
+
+  void _toggleCalibrationMode() {
+    setState(() {
+      _isCalibrationMode = !_isCalibrationMode;
+      if (!_isCalibrationMode) {
+        _selectedMarkerId = null;
+      }
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              _isCalibrationMode ? Icons.tune : Icons.map,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(_isCalibrationMode 
+                ? 'Calibration mode ON - drag markers to reposition' 
+                : 'Calibration mode OFF'),
+          ],
+        ),
+        backgroundColor: _isCalibrationMode ? _AppColors.accent1 : _AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _toggleCalibrationLock() {
+    setState(() {
+      _isCalibrationLocked = !_isCalibrationLocked;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              _isCalibrationLocked ? Icons.lock : Icons.lock_open,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(_isCalibrationLocked 
+                ? 'Points locked - positions fixed' 
+                : 'Points unlocked - drag to adjust'),
+          ],
+        ),
+        backgroundColor: _isCalibrationLocked ? _AppColors.accent4 : _AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _exportCalibratedCoordinates() {
+    final buffer = StringBuffer();
+    buffer.writeln('// Calibrated coordinates - copy to campus_routing_service.dart');
+    buffer.writeln('static const Map<int, DestinationInfo> destinations = {');
+    
+    for (final entry in CampusRoutingService.destinations.entries) {
+      final id = entry.key;
+      final dest = entry.value;
+      final pos = _calibratedPositions[id] ?? dest.position;
+      
+      buffer.writeln('  $id: DestinationInfo(');
+      buffer.writeln('    id: $id,');
+      buffer.writeln("    name: '${dest.name}',");
+      buffer.writeln("    shortName: '${dest.shortName}',");
+      buffer.writeln('    position: Offset(${pos.dx.toStringAsFixed(3)}, ${pos.dy.toStringAsFixed(3)}),');
+      buffer.writeln('    corridorSnapPoint: Offset(${dest.corridorSnapPoint.dx.toStringAsFixed(3)}, ${dest.corridorSnapPoint.dy.toStringAsFixed(3)}),');
+      buffer.writeln('  ),');
+    }
+    
+    buffer.writeln('};');
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.code, color: _AppColors.primary),
+            SizedBox(width: 8),
+            Text('Calibrated Coordinates'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 350,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              buffer.toString(),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _resetZoom() {
+    _transformationController.value = Matrix4.identity();
+  }
+
+  void _zoomIn() {
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    final newScale = (currentScale * 1.3).clamp(1.0, 5.0);
+    _setZoom(newScale);
+  }
+
+  void _zoomOut() {
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    final newScale = (currentScale / 1.3).clamp(1.0, 5.0);
+    _setZoom(newScale);
+  }
+
+  void _setZoom(double scale) {
+    // Get the center point of the current view
+    final matrix = _transformationController.value.clone();
+    final currentScale = matrix.getMaxScaleOnAxis();
+    
+    // Calculate scale factor
+    final scaleFactor = scale / currentScale;
+    
+    // Scale from center
+    matrix.scale(scaleFactor);
+    _transformationController.value = matrix;
   }
 
   @override
   void dispose() {
     _animationController.dispose();
+    _transformationController.removeListener(_onTransformChanged);
+    _transformationController.dispose();
     super.dispose();
   }
 
@@ -314,26 +490,182 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
+        child: Stack(
+          children: [
+            // Zoomable/pannable map (always enabled)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
+                
+                return InteractiveViewer(
+                  transformationController: _transformationController,
+                  panEnabled: true,
+                  scaleEnabled: true,
+                  minScale: 1.0,
+                  maxScale: 5.0,
+                  boundaryMargin: const EdgeInsets.all(100),
+                  child: _ImageAwareStack(
+                    containerSize: containerSize,
+                    imagePath: 'assets/images/floor_plan.png',
+                    routePoints: _routePoints,
+                    destinationMarkers: _destinationMarkers,
+                    corridors: _routingService.getCorridorPolylines(),
+                    showCorridors: _showCorridors,
+                    animation: _animation,
+                    buildDestinationNumber: _buildDestinationNumber,
+                    buildYouAreHereMarker: _buildYouAreHereMarker,
+                    buildDestinationFlag: _buildDestinationFlag,
+                    buildLegend: _buildLegend,
+                    isCalibrationMode: _isCalibrationMode,
+                    isCalibrationLocked: _isCalibrationLocked,
+                    calibratedPositions: _calibratedPositions,
+                    selectedMarkerId: _selectedMarkerId,
+                    onMarkerSelected: (id) {
+                      if (_isCalibrationMode && !_isCalibrationLocked) {
+                        setState(() => _selectedMarkerId = id);
+                      }
+                    },
+                    onMarkerMoved: (id, newPosition) {
+                      if (_isCalibrationMode && !_isCalibrationLocked) {
+                        setState(() {
+                          _calibratedPositions[id] = newPosition;
+                        });
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
             
-            // Use _ImageAwareStack to properly position markers relative to image
-            return _ImageAwareStack(
-              containerSize: containerSize,
-              imagePath: 'assets/images/floor_plan.png',
-              routePoints: _routePoints,
-              destinationMarkers: _destinationMarkers,
-              corridors: _routingService.getCorridorPolylines(),
-              showCorridors: _showCorridors,
-              animation: _animation,
-              buildDestinationNumber: _buildDestinationNumber,
-              buildYouAreHereMarker: _buildYouAreHereMarker,
-              buildDestinationFlag: _buildDestinationFlag,
-              buildLegend: _buildLegend,
-            );
-          },
+            // Zoom controls overlay
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: _buildZoomControls(),
+            ),
+            
+            // Zoom level indicator
+            if (_currentZoom > 1.01)
+              Positioned(
+                left: 12,
+                top: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${(_currentZoom * 100).round()}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            
+            // Calibration mode indicator
+            if (_isCalibrationMode)
+              Positioned(
+                left: 12,
+                bottom: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _isCalibrationLocked ? _AppColors.accent4 : Colors.orange,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isCalibrationLocked ? Icons.lock : Icons.edit_location_alt,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isCalibrationLocked ? 'Points Locked' : 'Drag Points',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildZoomControls() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Zoom in (always enabled)
+          _ZoomControlButton(
+            icon: Icons.add,
+            onPressed: _zoomIn,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          ),
+          Container(height: 1, width: 36, color: _AppColors.cardBorder),
+          // Reset zoom
+          _ZoomControlButton(
+            icon: Icons.fit_screen,
+            onPressed: _resetZoom,
+            borderRadius: BorderRadius.zero,
+          ),
+          Container(height: 1, width: 36, color: _AppColors.cardBorder),
+          // Zoom out (always enabled)
+          _ZoomControlButton(
+            icon: Icons.remove,
+            onPressed: _zoomOut,
+            borderRadius: BorderRadius.zero,
+          ),
+          Container(height: 1, width: 36, color: _AppColors.cardBorder),
+          // Calibration mode toggle
+          _ZoomControlButton(
+            icon: _isCalibrationMode ? Icons.edit_off : Icons.edit_location_alt,
+            onPressed: _toggleCalibrationMode,
+            borderRadius: _isCalibrationMode ? BorderRadius.zero : const BorderRadius.vertical(bottom: Radius.circular(12)),
+            isActive: _isCalibrationMode,
+          ),
+          // Lock/unlock calibration points (only in calibration mode)
+          if (_isCalibrationMode) ...[
+            Container(height: 1, width: 36, color: _AppColors.cardBorder),
+            _ZoomControlButton(
+              icon: _isCalibrationLocked ? Icons.lock : Icons.lock_open,
+              onPressed: _toggleCalibrationLock,
+              borderRadius: BorderRadius.zero,
+              isActive: _isCalibrationLocked,
+            ),
+            Container(height: 1, width: 36, color: _AppColors.cardBorder),
+            // Export calibrated coordinates
+            _ZoomControlButton(
+              icon: Icons.download,
+              onPressed: _exportCalibratedCoordinates,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -581,6 +913,54 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
   }
 }
 
+/// Zoom control button widget
+class _ZoomControlButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final BorderRadius borderRadius;
+  final bool isActive;
+
+  const _ZoomControlButton({
+    required this.icon,
+    required this.onPressed,
+    required this.borderRadius,
+    this.isActive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryColor = Color(0xFF2563EB);
+    const accent4Color = Color(0xFF10B981);
+    const textSecondary = Color(0xFF64748B);
+    
+    final isEnabled = onPressed != null;
+    final buttonColor = isActive 
+        ? accent4Color 
+        : (isEnabled ? primaryColor : textSecondary.withOpacity(0.5));
+    
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: borderRadius,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            color: isActive ? accent4Color.withOpacity(0.1) : null,
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: buttonColor,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Widget that properly positions markers relative to the actual rendered image size.
 /// This ensures normalized (0-1) coordinates align with visible map locations
 /// regardless of container size or aspect ratio.
@@ -596,6 +976,13 @@ class _ImageAwareStack extends StatefulWidget {
   final Widget Function() buildYouAreHereMarker;
   final Widget Function() buildDestinationFlag;
   final Widget Function() buildLegend;
+  // Calibration properties
+  final bool isCalibrationMode;
+  final bool isCalibrationLocked;
+  final Map<int, Offset> calibratedPositions;
+  final int? selectedMarkerId;
+  final void Function(int id)? onMarkerSelected;
+  final void Function(int id, Offset newPosition)? onMarkerMoved;
 
   const _ImageAwareStack({
     required this.containerSize,
@@ -609,6 +996,12 @@ class _ImageAwareStack extends StatefulWidget {
     required this.buildYouAreHereMarker,
     required this.buildDestinationFlag,
     required this.buildLegend,
+    this.isCalibrationMode = false,
+    this.isCalibrationLocked = true,
+    this.calibratedPositions = const {},
+    this.selectedMarkerId,
+    this.onMarkerSelected,
+    this.onMarkerMoved,
   });
 
   @override
@@ -624,6 +1017,15 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
   void initState() {
     super.initState();
     _loadImageSize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ImageAwareStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Recalculate image rect if container size changed
+    if (oldWidget.containerSize != widget.containerSize) {
+      _calculateImageRect();
+    }
   }
 
   Future<void> _loadImageSize() async {
@@ -657,40 +1059,63 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
   void _calculateImageRect() {
     if (_imageSize == null) return;
 
-    final containerAspect = widget.containerSize.width / widget.containerSize.height;
-    final imageAspect = _imageSize!.width / _imageSize!.height;
+    final containerWidth = widget.containerSize.width;
+    final containerHeight = widget.containerSize.height;
+    final imageWidth = _imageSize!.width;
+    final imageHeight = _imageSize!.height;
+
+    final containerAspect = containerWidth / containerHeight;
+    final imageAspect = imageWidth / imageHeight;
 
     double renderedWidth, renderedHeight;
     double offsetX, offsetY;
 
     if (imageAspect > containerAspect) {
-      // Image is wider - fit to width
-      renderedWidth = widget.containerSize.width;
-      renderedHeight = widget.containerSize.width / imageAspect;
+      // Image is wider than container - fit to width, letterbox top/bottom
+      renderedWidth = containerWidth;
+      renderedHeight = containerWidth / imageAspect;
       offsetX = 0;
-      offsetY = (widget.containerSize.height - renderedHeight) / 2;
+      offsetY = (containerHeight - renderedHeight) / 2;
     } else {
-      // Image is taller - fit to height
-      renderedHeight = widget.containerSize.height;
-      renderedWidth = widget.containerSize.height * imageAspect;
-      offsetX = (widget.containerSize.width - renderedWidth) / 2;
+      // Image is taller than container - fit to height, letterbox left/right
+      renderedHeight = containerHeight;
+      renderedWidth = containerHeight * imageAspect;
+      offsetX = (containerWidth - renderedWidth) / 2;
       offsetY = 0;
     }
 
     _imageRect = Rect.fromLTWH(offsetX, offsetY, renderedWidth, renderedHeight);
   }
 
-  /// Convert normalized (0-1) coordinates to screen position
+  /// Convert normalized (0-1) coordinates to screen position within the rendered image
   Offset _normalizedToScreen(Offset normalized) {
     if (_imageRect == null) {
+      // Fallback: use container size (will be corrected once image loads)
       return Offset(
         normalized.dx * widget.containerSize.width,
         normalized.dy * widget.containerSize.height,
       );
     }
+    // Convert normalized coords to position within the actual rendered image area
     return Offset(
       _imageRect!.left + normalized.dx * _imageRect!.width,
       _imageRect!.top + normalized.dy * _imageRect!.height,
+    );
+  }
+
+  /// Convert screen position back to normalized (0-1) coordinates
+  Offset _screenToNormalized(Offset screen) {
+    if (_imageRect == null) {
+      // Fallback: use container size
+      return Offset(
+        screen.dx / widget.containerSize.width,
+        screen.dy / widget.containerSize.height,
+      );
+    }
+    // Convert screen coords back to normalized coords relative to image area
+    return Offset(
+      (screen.dx - _imageRect!.left) / _imageRect!.width,
+      (screen.dy - _imageRect!.top) / _imageRect!.height,
     );
   }
 
@@ -743,9 +1168,54 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
           ),
 
         // Layer 4: Destination Numbers (always visible above route)
-        if (_imageLoaded)
+        // In calibration mode, use calibratedPositions and make them draggable
+        if (_imageLoaded && _imageRect != null)
           ...widget.destinationMarkers.map((marker) {
-            final screenPos = _normalizedToScreen(marker.position);
+            // Use calibrated position if available, otherwise use original
+            final position = widget.isCalibrationMode && widget.calibratedPositions.containsKey(marker.id)
+                ? widget.calibratedPositions[marker.id]!
+                : marker.position;
+            final screenPos = _normalizedToScreen(position);
+            final isSelected = widget.isCalibrationMode && widget.selectedMarkerId == marker.id;
+            
+            // Draggable in calibration mode when not locked
+            if (widget.isCalibrationMode && !widget.isCalibrationLocked) {
+              return Positioned(
+                left: screenPos.dx - 12,
+                top: screenPos.dy - 12,
+                child: GestureDetector(
+                  onTap: () => widget.onMarkerSelected?.call(marker.id),
+                  onPanStart: (_) => widget.onMarkerSelected?.call(marker.id),
+                  onPanUpdate: (details) {
+                    // Calculate new screen position
+                    final newScreenPos = Offset(
+                      screenPos.dx + details.delta.dx,
+                      screenPos.dy + details.delta.dy,
+                    );
+                    // Convert back to normalized and notify parent
+                    final newNormalized = _screenToNormalized(newScreenPos);
+                    widget.onMarkerMoved?.call(marker.id, newNormalized);
+                  },
+                  child: Container(
+                    decoration: isSelected
+                        ? BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.orange.withOpacity(0.6),
+                                blurRadius: 8,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          )
+                        : null,
+                    child: widget.buildDestinationNumber(marker),
+                  ),
+                ),
+              );
+            }
+            
+            // Not in calibration mode or locked - static markers
             return Positioned(
               left: screenPos.dx - 12,
               top: screenPos.dy - 12,
@@ -754,7 +1224,7 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
           }),
 
         // Layer 5: You Are Here marker
-        if (_imageLoaded && widget.routePoints.isNotEmpty)
+        if (_imageLoaded && _imageRect != null && widget.routePoints.isNotEmpty)
           Builder(builder: (context) {
             final screenPos = _normalizedToScreen(widget.routePoints.first);
             return Positioned(
@@ -765,7 +1235,7 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
           }),
 
         // Layer 6: Destination flag marker
-        if (_imageLoaded && widget.routePoints.isNotEmpty)
+        if (_imageLoaded && _imageRect != null && widget.routePoints.isNotEmpty)
           Builder(builder: (context) {
             final screenPos = _normalizedToScreen(widget.routePoints.last);
             return Positioned(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hospital_nav_app/services/hospital_api_service.dart';
+import 'package:hospital_nav_app/services/notification_service.dart';
 
 // Light theme color palette
 class AppColors {
@@ -30,6 +31,7 @@ class HospitalInfoScreen extends StatefulWidget {
 class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final HospitalApiService _apiService = HospitalApiService();
+  final NotificationService _notificationService = NotificationService();
 
   List<Alert> _alerts = [];
   List<Maintenance> _maintenanceItems = [];
@@ -43,12 +45,19 @@ class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTick
   StreamSubscription<int>? _opMonitorSubscription;
   bool _isMonitoring = false;
   int _currentOpNumber = 0;
+  int _lastNotifiedPosition = -1; // Track when we last sent an approaching notification
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadData();
+    _initializeNotifications();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await _notificationService.initialize();
+    await _notificationService.requestPermissions();
   }
 
   @override
@@ -92,6 +101,7 @@ class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTick
     
     setState(() {
       _isMonitoring = true;
+      _lastNotifiedPosition = -1;
     });
 
     _opMonitorSubscription = _apiService.monitorWardOP(_selectedWard!).listen(
@@ -100,6 +110,20 @@ class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTick
           _currentOpNumber = currentOp;
         });
 
+        final positionsAway = _userOpNumber! - currentOp;
+
+        // Send approaching notification when 3 positions away
+        if (positionsAway <= 3 && positionsAway > 0 && _lastNotifiedPosition != positionsAway) {
+          _lastNotifiedPosition = positionsAway;
+          _notificationService.showApproachingNotification(
+            currentOp: currentOp,
+            userOp: _userOpNumber!,
+            wardName: _selectedWard!,
+            positionsAway: positionsAway,
+          );
+        }
+
+        // Send main notification when it's user's turn
         if (currentOp >= _userOpNumber! && currentOp != -1) {
           _showOpNotification();
         }
@@ -117,11 +141,20 @@ class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTick
     setState(() {
       _isMonitoring = false;
       _currentOpNumber = 0;
+      _lastNotifiedPosition = -1;
     });
+    _notificationService.cancelAllNotifications();
     _showSuccessSnackBar('Monitoring stopped');
   }
 
   void _showOpNotification() {
+    // Show system notification (works when screen is off)
+    _notificationService.showOpNotification(
+      opNumber: _userOpNumber!,
+      wardName: _selectedWard!,
+    );
+
+    // Also show in-app dialog if app is in foreground
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -132,7 +165,7 @@ class _HospitalInfoScreenState extends State<HospitalInfoScreen> with SingleTick
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.success.withOpacity(0.1),
+                color: AppColors.success.withAlpha(25),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.notifications_active, color: AppColors.success),

@@ -49,6 +49,12 @@ dependencies:
   
   # HTTP client for API calls
   http: ^1.2.0
+  
+  # Text-to-Speech for voice guidance
+  flutter_tts: ^4.2.0
+  
+  # Local notifications for OP tracking (works when screen is off)
+  flutter_local_notifications: ^18.0.1
 
 dev_dependencies:
   flutter_test:

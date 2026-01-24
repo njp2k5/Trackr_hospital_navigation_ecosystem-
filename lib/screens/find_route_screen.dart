@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hospital_nav_app/services/image_hash_service.dart';
 import 'package:hospital_nav_app/screens/route_display_screen.dart';
+import 'package:hospital_nav_app/screens/landmark_directions_screen.dart';
 
 // Light theme color palette
 class _AppColors {
@@ -196,6 +197,34 @@ class _FindRouteScreenState extends State<FindRouteScreen> {
       MaterialPageRoute(
         builder: (context) => RouteDisplayScreen(
           currentLocation: finalCurrentLocation,
+          destination: destination,
+          isWheelchairFriendly: _wheelchairFriendly,
+        ),
+      ),
+    );
+  }
+
+  void _showLandmarkDirections() {
+    final destination = _destinationController.text.trim();
+    final currentLoc = _currentLocationController.text.trim();
+    
+    if (destination.isEmpty) {
+      _showErrorSnackBar('Please enter a destination');
+      return;
+    }
+    
+    if (currentLoc.isEmpty && _currentLocation == 'Unknown') {
+      _showErrorSnackBar('Please enter your current location or upload an image');
+      return;
+    }
+
+    final finalCurrentLocation = currentLoc.isNotEmpty ? currentLoc : _currentLocation;
+    
+    // Navigate to landmark directions screen
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => LandmarkDirectionsScreen(
+          source: finalCurrentLocation,
           destination: destination,
           isWheelchairFriendly: _wheelchairFriendly,
         ),
@@ -753,6 +782,67 @@ class _FindRouteScreenState extends State<FindRouteScreen> {
                       });
                     },
                     activeColor: _AppColors.primary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Landmark-Based Directions Option
+          InkWell(
+            onTap: _showLandmarkDirections,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFFF6B35).withOpacity(0.5),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B35).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.signpost,
+                      color: Color(0xFFFF6B35),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Get Landmark-Based Directions',
+                          style: TextStyle(
+                            color: Color(0xFFFF6B35),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Step-by-step with landmarks • Voice guidance • Malayalam',
+                          style: TextStyle(
+                            color: _AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    color: Color(0xFFFF6B35),
+                    size: 16,
                   ),
                 ],
               ),

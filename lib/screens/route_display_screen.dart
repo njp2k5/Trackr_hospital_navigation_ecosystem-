@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hospital_nav_app/services/campus_routing_service.dart';
 
 // Light theme color palette
@@ -14,7 +15,7 @@ class _AppColors {
   static const Color textSecondary = Color(0xFF64748B);
   static const Color accent1 = Color(0xFFEF4444);
   static const Color accent4 = Color(0xFF10B981);
-  static const Color routeColor = Color(0xFF2563EB);
+  static const Color routeColor = Color(0xFFEF4444); // Red route color
 }
 
 class RouteDisplayScreen extends StatefulWidget {
@@ -37,41 +38,50 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
-  
+
   final CampusRoutingService _routingService = CampusRoutingService();
   late List<Offset> _routePoints;
   late List<DestinationMarker> _destinationMarkers;
   bool _showCorridors = false; // Debug: show corridor network
-  
+
   // Zoom and pan controls
-  final TransformationController _transformationController = TransformationController();
+  final TransformationController _transformationController =
+      TransformationController();
   double _currentZoom = 1.0;
-  
+
   // Calibration mode
   bool _isCalibrationMode = false;
   bool _isCalibrationLocked = false;
   Map<int, Offset> _calibratedPositions = {};
   int? _selectedMarkerId;
 
+  // Reference points along the route
+  List<ReferencePoint> _referencePoints = [];
+  int _nextReferenceId = 1;
+  bool _isAddingReferencePoint = false;
+  bool _showDistances = true;
+
   @override
   void initState() {
     super.initState();
-    
-    // Initialize routing service
-    _routingService.initialize();
-    
+
+    // Initialize routing service with wheelchair mode if needed
+    _routingService.initialize(wheelchairMode: widget.isWheelchairFriendly);
+
     // Generate route using corridor-based pathfinding
+    // Pass wheelchair mode to get accessible routes
     _routePoints = _routingService.findRoute(
       widget.currentLocation,
       widget.destination,
+      wheelchairFriendly: widget.isWheelchairFriendly,
     );
-    
+
     // Get destination markers for display
     _destinationMarkers = _routingService.getDestinationMarkers();
-    
+
     // Initialize calibrated positions from current destinations
     _initializeCalibratedPositions();
-    
+
     // Animation controller for route drawing
     _animationController = AnimationController(
       vsync: this,
@@ -89,7 +99,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
         _animationController.forward();
       }
     });
-    
+
     // Listen to transformation changes
     _transformationController.addListener(_onTransformChanged);
   }
@@ -117,7 +127,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
         _selectedMarkerId = null;
       }
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -128,12 +138,16 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
               size: 18,
             ),
             const SizedBox(width: 8),
-            Text(_isCalibrationMode 
-                ? 'Calibration mode ON - drag markers to reposition' 
-                : 'Calibration mode OFF'),
+            Text(
+              _isCalibrationMode
+                  ? 'Calibration mode ON - drag markers to reposition'
+                  : 'Calibration mode OFF',
+            ),
           ],
         ),
-        backgroundColor: _isCalibrationMode ? _AppColors.accent1 : _AppColors.primary,
+        backgroundColor: _isCalibrationMode
+            ? _AppColors.accent1
+            : _AppColors.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -145,7 +159,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     setState(() {
       _isCalibrationLocked = !_isCalibrationLocked;
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -156,12 +170,16 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
               size: 18,
             ),
             const SizedBox(width: 8),
-            Text(_isCalibrationLocked 
-                ? 'Points locked - positions fixed' 
-                : 'Points unlocked - drag to adjust'),
+            Text(
+              _isCalibrationLocked
+                  ? 'Points locked - positions fixed'
+                  : 'Points unlocked - drag to adjust',
+            ),
           ],
         ),
-        backgroundColor: _isCalibrationLocked ? _AppColors.accent4 : _AppColors.primary,
+        backgroundColor: _isCalibrationLocked
+            ? _AppColors.accent4
+            : _AppColors.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -171,25 +189,29 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
 
   void _exportCalibratedCoordinates() {
     final buffer = StringBuffer();
-    buffer.writeln('// Calibrated coordinates - copy to campus_routing_service.dart');
+    buffer.writeln(
+      '// Calibrated coordinates - copy to campus_routing_service.dart',
+    );
     buffer.writeln('static const Map<int, DestinationInfo> destinations = {');
-    
+
     for (final entry in CampusRoutingService.destinations.entries) {
       final id = entry.key;
       final dest = entry.value;
       final pos = _calibratedPositions[id] ?? dest.position;
-      
+
       buffer.writeln('  $id: DestinationInfo(');
       buffer.writeln('    id: $id,');
       buffer.writeln("    name: '${dest.name}',");
       buffer.writeln("    shortName: '${dest.shortName}',");
-      buffer.writeln('    position: Offset(${pos.dx.toStringAsFixed(3)}, ${pos.dy.toStringAsFixed(3)}),');
-      buffer.writeln('    corridorSnapPoint: Offset(${dest.corridorSnapPoint.dx.toStringAsFixed(3)}, ${dest.corridorSnapPoint.dy.toStringAsFixed(3)}),');
+      buffer.writeln(
+        '    position: Offset(${pos.dx.toStringAsFixed(3)}, ${pos.dy.toStringAsFixed(3)}),',
+      );
+      buffer.writeln('    nearestRefPoint: ${dest.nearestRefPoint},');
       buffer.writeln('  ),');
     }
-    
+
     buffer.writeln('};');
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -206,10 +228,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
           child: SingleChildScrollView(
             child: SelectableText(
               buffer.toString(),
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 10,
-              ),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
             ),
           ),
         ),
@@ -243,13 +262,252 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     // Get the center point of the current view
     final matrix = _transformationController.value.clone();
     final currentScale = matrix.getMaxScaleOnAxis();
-    
+
     // Calculate scale factor
     final scaleFactor = scale / currentScale;
-    
+
     // Scale from center
     matrix.scale(scaleFactor);
     _transformationController.value = matrix;
+  }
+
+  // ========== Reference Point Methods ==========
+
+  void _addReferencePoint(Offset normalizedPos) {
+    setState(() {
+      _referencePoints.add(
+        ReferencePoint(
+          id: _nextReferenceId++,
+          position: normalizedPos,
+          label: 'Ref $_nextReferenceId',
+          createdAt: DateTime.now(),
+        ),
+      );
+      _isAddingReferencePoint = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Reference point R${_nextReferenceId - 1} added'),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _showReferencePointInfo(ReferencePoint refPoint) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: const BoxDecoration(
+                color: Colors.orange,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  'R${refPoint.id}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text('Reference Point'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ID: R${refPoint.id}'),
+            const SizedBox(height: 8),
+            Text('X: ${refPoint.position.dx.toStringAsFixed(4)}'),
+            Text('Y: ${refPoint.position.dy.toStringAsFixed(4)}'),
+            const SizedBox(height: 8),
+            Text('Created: ${refPoint.createdAt.toString().substring(0, 19)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteReferencePoint(refPoint);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteReferencePoint(ReferencePoint refPoint) {
+    setState(() {
+      _referencePoints.removeWhere((r) => r.id == refPoint.id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Reference point R${refPoint.id} deleted'),
+        backgroundColor: _AppColors.accent1,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  List<DistanceLabel> _calculateDistanceLabels() {
+    List<DistanceLabel> labels = [];
+
+    if (_routePoints.length < 2) return labels;
+
+    // Calculate distances between consecutive route points
+    for (int i = 0; i < _routePoints.length - 1; i++) {
+      final p1 = _routePoints[i];
+      final p2 = _routePoints[i + 1];
+
+      // Only show labels at significant points (every 3rd segment or at turns)
+      if (i % 3 == 0 || i == _routePoints.length - 2) {
+        final distance = _calculateDistance(p1, p2);
+        final midPoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+
+        labels.add(
+          DistanceLabel(position: midPoint, text: '${distance.toInt()}m'),
+        );
+      }
+    }
+
+    return labels;
+  }
+
+  double _calculateDistance(Offset p1, Offset p2) {
+    // Normalize distance: 0.1 normalized units ≈ 50 meters
+    final normalizedDistance = (p2 - p1).distance;
+    return normalizedDistance * 500; // Scale factor
+  }
+
+  void _toggleAddReferencePointMode() {
+    setState(() {
+      _isAddingReferencePoint = !_isAddingReferencePoint;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              _isAddingReferencePoint ? Icons.touch_app : Icons.close,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _isAddingReferencePoint
+                  ? 'Tap on map to add reference point'
+                  : 'Reference point mode cancelled',
+            ),
+          ],
+        ),
+        backgroundColor: _isAddingReferencePoint
+            ? Colors.orange
+            : _AppColors.textSecondary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _toggleDistanceDisplay() {
+    setState(() {
+      _showDistances = !_showDistances;
+    });
+  }
+
+  void _exportReferencePoints() {
+    final buffer = StringBuffer();
+    buffer.writeln('// Reference Points Export');
+    buffer.writeln('// Generated: ${DateTime.now()}');
+    buffer.writeln(
+      '// Route: ${widget.currentLocation} -> ${widget.destination}',
+    );
+    buffer.writeln('');
+    buffer.writeln(
+      'static const List<Map<String, dynamic>> referencePoints = [',
+    );
+
+    for (final refPoint in _referencePoints) {
+      buffer.writeln('  {');
+      buffer.writeln("    'id': ${refPoint.id},");
+      buffer.writeln("    'x': ${refPoint.position.dx.toStringAsFixed(4)},");
+      buffer.writeln("    'y': ${refPoint.position.dy.toStringAsFixed(4)},");
+      buffer.writeln("    'label': '${refPoint.label}',");
+      buffer.writeln('  },');
+    }
+
+    buffer.writeln('];');
+    buffer.writeln('');
+    buffer.writeln('// Total Distance: ${_getTotalDistance().toInt()} meters');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.code, color: _AppColors.primary),
+            SizedBox(width: 8),
+            Text('Reference Points Export'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 350,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              buffer.toString(),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _referencePoints.clear();
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _getTotalDistance() {
+    double totalDistance = 0;
+    for (int i = 0; i < _routePoints.length - 1; i++) {
+      totalDistance += _calculateDistance(_routePoints[i], _routePoints[i + 1]);
+    }
+    return totalDistance;
   }
 
   @override
@@ -269,9 +527,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
           children: [
             _buildAppBar(),
             _buildRouteInfoCard(),
-            Expanded(
-              child: _buildMapWithRoute(),
-            ),
+            Expanded(child: _buildMapWithRoute()),
             _buildBottomActions(),
           ],
         ),
@@ -296,7 +552,10 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back_ios_new, color: _AppColors.primary),
+            icon: const Icon(
+              Icons.arrow_back_ios_new,
+              color: _AppColors.primary,
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -312,9 +571,13 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                   ),
                 ),
                 Text(
-                  widget.isWheelchairFriendly ? 'Accessible Route' : 'Walking Route',
+                  widget.isWheelchairFriendly
+                      ? 'Accessible Route'
+                      : 'Walking Route',
                   style: TextStyle(
-                    color: widget.isWheelchairFriendly ? _AppColors.primary : _AppColors.textSecondary,
+                    color: widget.isWheelchairFriendly
+                        ? _AppColors.primary
+                        : _AppColors.textSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -330,7 +593,9 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
             },
             icon: Icon(
               Icons.route,
-              color: _showCorridors ? _AppColors.primary : _AppColors.textSecondary,
+              color: _showCorridors
+                  ? _AppColors.primary
+                  : _AppColors.textSecondary,
             ),
             tooltip: 'Show/Hide Corridors',
           ),
@@ -374,12 +639,19 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                     color: _AppColors.accent4.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.my_location, color: _AppColors.accent4, size: 20),
+                  child: const Icon(
+                    Icons.my_location,
+                    color: _AppColors.accent4,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'From',
-                  style: TextStyle(color: _AppColors.textSecondary, fontSize: 11),
+                  style: TextStyle(
+                    color: _AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -402,7 +674,10 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: _AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(16),
@@ -410,20 +685,61 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 30, height: 2, color: _AppColors.primary),
-                      const Icon(Icons.arrow_forward, color: _AppColors.primary, size: 14),
+                      Container(
+                        width: 30,
+                        height: 2,
+                        color: _AppColors.primary,
+                      ),
+                      const Icon(
+                        Icons.arrow_forward,
+                        color: _AppColors.primary,
+                        size: 14,
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '~${_estimateWalkTime()} min',
+                  '${_calculateTotalDistance().toStringAsFixed(0)} m',
                   style: TextStyle(
                     color: _AppColors.primary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (widget.isWheelchairFriendly)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _AppColors.primary.withAlpha(25),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.accessible,
+                            color: _AppColors.primary,
+                            size: 10,
+                          ),
+                          SizedBox(width: 2),
+                          Text(
+                            'Accessible',
+                            style: TextStyle(
+                              color: _AppColors.primary,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -437,12 +753,19 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                     color: _AppColors.accent1.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.flag, color: _AppColors.accent1, size: 20),
+                  child: const Icon(
+                    Icons.flag,
+                    color: _AppColors.accent1,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'To',
-                  style: TextStyle(color: _AppColors.textSecondary, fontSize: 11),
+                  style: TextStyle(
+                    color: _AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -474,6 +797,52 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     return max(1, (totalDist * 500 / 83).round()); // ~1 min per 83m
   }
 
+  // Calculate total distance in meters based on reference points
+  double _calculateTotalDistance() {
+    double totalDist = 0;
+    for (int i = 1; i < _routePoints.length; i++) {
+      totalDist += (_routePoints[i] - _routePoints[i - 1]).distance;
+    }
+    // Scale: normalized units to meters (calibrated from reference points)
+    // Based on campus measurements: ~0.1 normalized units ≈ 50 meters
+    return totalDist * 500;
+  }
+
+  // Share route functionality
+  void _shareRoute() {
+    final distance = _calculateTotalDistance().toStringAsFixed(0);
+    final wheelchairInfo = widget.isWheelchairFriendly
+        ? ' (Wheelchair Accessible)'
+        : '';
+    final shareText =
+        '''
+🏥 Hospital Navigation Route$wheelchairInfo
+
+📍 From: ${widget.currentLocation}
+📍 To: ${widget.destination}
+📏 Distance: ${distance}m
+
+Shared via Hospital Navigation App
+''';
+
+    Clipboard.setData(ClipboardData(text: shareText));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text('Route copied to clipboard!'),
+          ],
+        ),
+        backgroundColor: _AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Widget _buildMapWithRoute() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -495,62 +864,84 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
             // Zoomable/pannable map (always enabled)
             LayoutBuilder(
               builder: (context, constraints) {
-                final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
-                
-                return InteractiveViewer(
-                  transformationController: _transformationController,
-                  panEnabled: true,
-                  scaleEnabled: true,
-                  minScale: 1.0,
-                  maxScale: 5.0,
-                  boundaryMargin: const EdgeInsets.all(100),
-                  child: _ImageAwareStack(
-                    containerSize: containerSize,
-                    imagePath: 'assets/images/floor_plan.png',
-                    routePoints: _routePoints,
-                    destinationMarkers: _destinationMarkers,
-                    corridors: _routingService.getCorridorPolylines(),
-                    showCorridors: _showCorridors,
-                    animation: _animation,
-                    buildDestinationNumber: _buildDestinationNumber,
-                    buildYouAreHereMarker: _buildYouAreHereMarker,
-                    buildDestinationFlag: _buildDestinationFlag,
-                    buildLegend: _buildLegend,
-                    isCalibrationMode: _isCalibrationMode,
-                    isCalibrationLocked: _isCalibrationLocked,
-                    calibratedPositions: _calibratedPositions,
-                    selectedMarkerId: _selectedMarkerId,
-                    onMarkerSelected: (id) {
-                      if (_isCalibrationMode && !_isCalibrationLocked) {
-                        setState(() => _selectedMarkerId = id);
-                      }
-                    },
-                    onMarkerMoved: (id, newPosition) {
-                      if (_isCalibrationMode && !_isCalibrationLocked) {
-                        setState(() {
-                          _calibratedPositions[id] = newPosition;
-                        });
-                      }
-                    },
+                final containerSize = Size(
+                  constraints.maxWidth,
+                  constraints.maxHeight,
+                );
+
+                return GestureDetector(
+                  onTapUp: _isAddingReferencePoint
+                      ? (details) {
+                          // Will be handled by _ImageAwareStack
+                        }
+                      : null,
+                  child: InteractiveViewer(
+                    transformationController: _transformationController,
+                    panEnabled: !_isAddingReferencePoint,
+                    scaleEnabled: !_isAddingReferencePoint,
+                    minScale: 1.0,
+                    maxScale: 5.0,
+                    boundaryMargin: const EdgeInsets.all(100),
+                    child: _ImageAwareStack(
+                      containerSize: containerSize,
+                      imagePath: 'assets/images/floor_plan.png',
+                      routePoints: _routePoints,
+                      destinationMarkers: _destinationMarkers,
+                      corridors: _routingService.getCorridorPolylines(),
+                      showCorridors: _showCorridors,
+                      animation: _animation,
+                      buildDestinationNumber: _buildDestinationNumber,
+                      buildDestinationFlag: _buildDestinationFlag,
+                      buildLegend: _buildLegend,
+                      isCalibrationMode: _isCalibrationMode,
+                      isCalibrationLocked: _isCalibrationLocked,
+                      calibratedPositions: _calibratedPositions,
+                      selectedMarkerId: _selectedMarkerId,
+                      onMarkerSelected: (id) {
+                        if (_isCalibrationMode && !_isCalibrationLocked) {
+                          setState(() => _selectedMarkerId = id);
+                        }
+                      },
+                      onMarkerMoved: (id, newPosition) {
+                        if (_isCalibrationMode && !_isCalibrationLocked) {
+                          setState(() {
+                            _calibratedPositions[id] = newPosition;
+                          });
+                        }
+                      },
+                      // Reference points
+                      referencePoints: _referencePoints,
+                      showDistances: _showDistances,
+                      distanceLabels: _calculateDistanceLabels(),
+                      isAddingReferencePoint: _isAddingReferencePoint,
+                      onMapTap: (normalizedPos) {
+                        _addReferencePoint(normalizedPos);
+                      },
+                      onReferencePointTap: (refPoint) {
+                        _showReferencePointInfo(refPoint);
+                      },
+                      onReferencePointDelete: (refPoint) {
+                        _deleteReferencePoint(refPoint);
+                      },
+                    ),
                   ),
                 );
               },
             ),
-            
+
             // Zoom controls overlay
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: _buildZoomControls(),
-            ),
-            
+            Positioned(right: 12, bottom: 12, child: _buildZoomControls()),
+
             // Zoom level indicator
             if (_currentZoom > 1.01)
               Positioned(
                 left: 12,
                 top: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(16),
@@ -565,23 +956,30 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                   ),
                 ),
               ),
-            
+
             // Calibration mode indicator
             if (_isCalibrationMode)
               Positioned(
                 left: 12,
                 bottom: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: _isCalibrationLocked ? _AppColors.accent4 : Colors.orange,
+                    color: _isCalibrationLocked
+                        ? _AppColors.accent4
+                        : Colors.orange,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        _isCalibrationLocked ? Icons.lock : Icons.edit_location_alt,
+                        _isCalibrationLocked
+                            ? Icons.lock
+                            : Icons.edit_location_alt,
                         color: Colors.white,
                         size: 14,
                       ),
@@ -634,37 +1032,14 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
             borderRadius: BorderRadius.zero,
           ),
           Container(height: 1, width: 36, color: _AppColors.cardBorder),
-          // Zoom out (always enabled)
+          // Zoom out (always at bottom now)
           _ZoomControlButton(
             icon: Icons.remove,
             onPressed: _zoomOut,
-            borderRadius: BorderRadius.zero,
-          ),
-          Container(height: 1, width: 36, color: _AppColors.cardBorder),
-          // Calibration mode toggle
-          _ZoomControlButton(
-            icon: _isCalibrationMode ? Icons.edit_off : Icons.edit_location_alt,
-            onPressed: _toggleCalibrationMode,
-            borderRadius: _isCalibrationMode ? BorderRadius.zero : const BorderRadius.vertical(bottom: Radius.circular(12)),
-            isActive: _isCalibrationMode,
-          ),
-          // Lock/unlock calibration points (only in calibration mode)
-          if (_isCalibrationMode) ...[
-            Container(height: 1, width: 36, color: _AppColors.cardBorder),
-            _ZoomControlButton(
-              icon: _isCalibrationLocked ? Icons.lock : Icons.lock_open,
-              onPressed: _toggleCalibrationLock,
-              borderRadius: BorderRadius.zero,
-              isActive: _isCalibrationLocked,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(12),
             ),
-            Container(height: 1, width: 36, color: _AppColors.cardBorder),
-            // Export calibrated coordinates
-            _ZoomControlButton(
-              icon: Icons.download,
-              onPressed: _exportCalibratedCoordinates,
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-            ),
-          ],
+          ),
         ],
       ),
     );
@@ -702,56 +1077,6 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
     );
   }
 
-  Widget _buildYouAreHereMarker() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: _AppColors.accent4,
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: [
-              BoxShadow(
-                color: _AppColors.accent4.withOpacity(0.4),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Text(
-            'You are here',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        CustomPaint(
-          size: const Size(10, 6),
-          painter: _TrianglePainter(color: _AppColors.accent4),
-        ),
-        Container(
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(
-            color: _AppColors.accent4,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: _AppColors.accent4.withOpacity(0.5),
-                blurRadius: 6,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildDestinationFlag() {
     return Container(
       padding: const EdgeInsets.all(4),
@@ -785,26 +1110,38 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           _legendItem(
-            Container(width: 16, height: 3, decoration: BoxDecoration(
-              color: _AppColors.routeColor,
-              borderRadius: BorderRadius.circular(2),
-            )),
+            Container(
+              width: 16,
+              height: 3,
+              decoration: BoxDecoration(
+                color: _AppColors.routeColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             'Your Route',
           ),
           const SizedBox(height: 4),
           _legendItem(
-            Container(width: 10, height: 10, decoration: const BoxDecoration(
-              color: _AppColors.accent4,
-              shape: BoxShape.circle,
-            )),
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: _AppColors.accent4,
+                shape: BoxShape.circle,
+              ),
+            ),
             'Start',
           ),
           const SizedBox(height: 4),
           _legendItem(
-            Container(width: 10, height: 10, decoration: const BoxDecoration(
-              color: _AppColors.accent1,
-              shape: BoxShape.circle,
-            )),
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: _AppColors.accent1,
+                shape: BoxShape.circle,
+              ),
+            ),
             'Destination',
           ),
         ],
@@ -818,7 +1155,10 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
       children: [
         icon,
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 9, color: _AppColors.textPrimary)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 9, color: _AppColors.textPrimary),
+        ),
       ],
     );
   }
@@ -844,16 +1184,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Route sharing coming soon!'),
-                    backgroundColor: _AppColors.primary,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                );
-              },
+              onPressed: _shareRoute,
               icon: const Icon(Icons.share, color: _AppColors.textSecondary),
             ),
           ),
@@ -865,10 +1196,14 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen>
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('Turn-by-turn navigation coming soon!'),
+                      content: const Text(
+                        'Turn-by-turn navigation coming soon!',
+                      ),
                       backgroundColor: _AppColors.accent4,
                       behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   );
                 },
@@ -932,12 +1267,12 @@ class _ZoomControlButton extends StatelessWidget {
     const primaryColor = Color(0xFF2563EB);
     const accent4Color = Color(0xFF10B981);
     const textSecondary = Color(0xFF64748B);
-    
+
     final isEnabled = onPressed != null;
-    final buttonColor = isActive 
-        ? accent4Color 
+    final buttonColor = isActive
+        ? accent4Color
         : (isEnabled ? primaryColor : textSecondary.withOpacity(0.5));
-    
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -950,11 +1285,7 @@ class _ZoomControlButton extends StatelessWidget {
             borderRadius: borderRadius,
             color: isActive ? accent4Color.withOpacity(0.1) : null,
           ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: buttonColor,
-          ),
+          child: Icon(icon, size: 20, color: buttonColor),
         ),
       ),
     );
@@ -973,7 +1304,6 @@ class _ImageAwareStack extends StatefulWidget {
   final bool showCorridors;
   final Animation<double> animation;
   final Widget Function(DestinationMarker) buildDestinationNumber;
-  final Widget Function() buildYouAreHereMarker;
   final Widget Function() buildDestinationFlag;
   final Widget Function() buildLegend;
   // Calibration properties
@@ -983,6 +1313,15 @@ class _ImageAwareStack extends StatefulWidget {
   final int? selectedMarkerId;
   final void Function(int id)? onMarkerSelected;
   final void Function(int id, Offset newPosition)? onMarkerMoved;
+  // Reference points
+  final List<ReferencePoint> referencePoints;
+  final void Function(ReferencePoint)? onReferencePointTap;
+  final void Function(ReferencePoint)? onReferencePointDelete;
+  final bool showDistances;
+  final List<DistanceLabel> distanceLabels;
+  // Add reference point mode
+  final bool isAddingReferencePoint;
+  final void Function(Offset normalizedPosition)? onMapTap;
 
   const _ImageAwareStack({
     required this.containerSize,
@@ -993,7 +1332,6 @@ class _ImageAwareStack extends StatefulWidget {
     required this.showCorridors,
     required this.animation,
     required this.buildDestinationNumber,
-    required this.buildYouAreHereMarker,
     required this.buildDestinationFlag,
     required this.buildLegend,
     this.isCalibrationMode = false,
@@ -1002,6 +1340,13 @@ class _ImageAwareStack extends StatefulWidget {
     this.selectedMarkerId,
     this.onMarkerSelected,
     this.onMarkerMoved,
+    this.referencePoints = const [],
+    this.onReferencePointTap,
+    this.onReferencePointDelete,
+    this.showDistances = true,
+    this.distanceLabels = const [],
+    this.isAddingReferencePoint = false,
+    this.onMapTap,
   });
 
   @override
@@ -1032,24 +1377,31 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
     try {
       final imageProvider = AssetImage(widget.imagePath);
       final completer = imageProvider.resolve(const ImageConfiguration());
-      completer.addListener(ImageStreamListener((info, _) {
-        if (mounted) {
-          setState(() {
-            _imageSize = Size(
-              info.image.width.toDouble(),
-              info.image.height.toDouble(),
-            );
-            _calculateImageRect();
-            _imageLoaded = true;
-          });
-        }
-      }));
+      completer.addListener(
+        ImageStreamListener((info, _) {
+          if (mounted) {
+            setState(() {
+              _imageSize = Size(
+                info.image.width.toDouble(),
+                info.image.height.toDouble(),
+              );
+              _calculateImageRect();
+              _imageLoaded = true;
+            });
+          }
+        }),
+      );
     } catch (e) {
       // Use container size as fallback
       if (mounted) {
         setState(() {
           _imageSize = widget.containerSize;
-          _imageRect = Rect.fromLTWH(0, 0, widget.containerSize.width, widget.containerSize.height);
+          _imageRect = Rect.fromLTWH(
+            0,
+            0,
+            widget.containerSize.width,
+            widget.containerSize.height,
+          );
           _imageLoaded = true;
         });
       }
@@ -1121,137 +1473,278 @@ class _ImageAwareStackState extends State<_ImageAwareStack> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Layer 1: Map Image (bottom)
-        Positioned.fill(
-          child: Image.asset(
-            widget.imagePath,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return CustomPaint(
-                size: widget.containerSize,
-                painter: _PlaceholderMapPainter(),
-              );
-            },
-          ),
-        ),
-
-        // Layer 2: Corridor network (debug, optional)
-        if (widget.showCorridors && _imageRect != null)
+    return GestureDetector(
+      onTapUp: widget.isAddingReferencePoint && _imageRect != null
+          ? (details) {
+              final normalizedPos = _screenToNormalized(details.localPosition);
+              // Only add if tap is within the image bounds
+              if (normalizedPos.dx >= 0 &&
+                  normalizedPos.dx <= 1 &&
+                  normalizedPos.dy >= 0 &&
+                  normalizedPos.dy <= 1) {
+                widget.onMapTap?.call(normalizedPos);
+              }
+            }
+          : null,
+      child: Stack(
+        children: [
+          // Layer 1: Map Image (bottom)
           Positioned.fill(
-            child: CustomPaint(
-              size: widget.containerSize,
-              painter: _CorridorNetworkPainter(
-                corridors: widget.corridors,
-                imageRect: _imageRect!,
-              ),
-            ),
-          ),
-
-        // Layer 3: Animated Route Overlay
-        if (_imageRect != null)
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: widget.animation,
-              builder: (context, child) {
+            child: Image.asset(
+              widget.imagePath,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
                 return CustomPaint(
                   size: widget.containerSize,
-                  painter: _RoutePathPainter(
-                    routePoints: widget.routePoints,
-                    progress: widget.animation.value,
-                    imageRect: _imageRect!,
-                  ),
+                  painter: _PlaceholderMapPainter(),
                 );
               },
             ),
           ),
 
-        // Layer 4: Destination Numbers (always visible above route)
-        // In calibration mode, use calibratedPositions and make them draggable
-        if (_imageLoaded && _imageRect != null)
-          ...widget.destinationMarkers.map((marker) {
-            // Use calibrated position if available, otherwise use original
-            final position = widget.isCalibrationMode && widget.calibratedPositions.containsKey(marker.id)
-                ? widget.calibratedPositions[marker.id]!
-                : marker.position;
-            final screenPos = _normalizedToScreen(position);
-            final isSelected = widget.isCalibrationMode && widget.selectedMarkerId == marker.id;
-            
-            // Draggable in calibration mode when not locked
-            if (widget.isCalibrationMode && !widget.isCalibrationLocked) {
+          // Layer 2: Corridor network (debug, optional)
+          if (widget.showCorridors && _imageRect != null)
+            Positioned.fill(
+              child: CustomPaint(
+                size: widget.containerSize,
+                painter: _CorridorNetworkPainter(
+                  corridors: widget.corridors,
+                  imageRect: _imageRect!,
+                ),
+              ),
+            ),
+
+          // Layer 3: Animated Route Overlay
+          if (_imageRect != null)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: widget.animation,
+                builder: (context, child) {
+                  return CustomPaint(
+                    size: widget.containerSize,
+                    painter: _RoutePathPainter(
+                      routePoints: widget.routePoints,
+                      progress: widget.animation.value,
+                      imageRect: _imageRect!,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          // Layer 4: Destination Numbers (always visible above route)
+          // In calibration mode, use calibratedPositions and make them draggable
+          if (_imageLoaded && _imageRect != null)
+            ...widget.destinationMarkers.map((marker) {
+              // Use calibrated position if available, otherwise use original
+              final position =
+                  widget.isCalibrationMode &&
+                      widget.calibratedPositions.containsKey(marker.id)
+                  ? widget.calibratedPositions[marker.id]!
+                  : marker.position;
+              final screenPos = _normalizedToScreen(position);
+              final isSelected =
+                  widget.isCalibrationMode &&
+                  widget.selectedMarkerId == marker.id;
+
+              // Draggable in calibration mode when not locked
+              if (widget.isCalibrationMode && !widget.isCalibrationLocked) {
+                return Positioned(
+                  left: screenPos.dx - 12,
+                  top: screenPos.dy - 12,
+                  child: GestureDetector(
+                    onTap: () => widget.onMarkerSelected?.call(marker.id),
+                    onPanStart: (_) => widget.onMarkerSelected?.call(marker.id),
+                    onPanUpdate: (details) {
+                      // Calculate new screen position
+                      final newScreenPos = Offset(
+                        screenPos.dx + details.delta.dx,
+                        screenPos.dy + details.delta.dy,
+                      );
+                      // Convert back to normalized and notify parent
+                      final newNormalized = _screenToNormalized(newScreenPos);
+                      widget.onMarkerMoved?.call(marker.id, newNormalized);
+                    },
+                    child: Container(
+                      decoration: isSelected
+                          ? BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.orange.withOpacity(0.6),
+                                  blurRadius: 8,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            )
+                          : null,
+                      child: widget.buildDestinationNumber(marker),
+                    ),
+                  ),
+                );
+              }
+
+              // Not in calibration mode or locked - static markers
               return Positioned(
                 left: screenPos.dx - 12,
                 top: screenPos.dy - 12,
-                child: GestureDetector(
-                  onTap: () => widget.onMarkerSelected?.call(marker.id),
-                  onPanStart: (_) => widget.onMarkerSelected?.call(marker.id),
-                  onPanUpdate: (details) {
-                    // Calculate new screen position
-                    final newScreenPos = Offset(
-                      screenPos.dx + details.delta.dx,
-                      screenPos.dy + details.delta.dy,
-                    );
-                    // Convert back to normalized and notify parent
-                    final newNormalized = _screenToNormalized(newScreenPos);
-                    widget.onMarkerMoved?.call(marker.id, newNormalized);
-                  },
+                child: widget.buildDestinationNumber(marker),
+              );
+            }),
+
+          // Layer 5: Start point indicator (simple dot, no "You are here" tag)
+          if (_imageLoaded &&
+              _imageRect != null &&
+              widget.routePoints.isNotEmpty)
+            Builder(
+              builder: (context) {
+                final screenPos = _normalizedToScreen(widget.routePoints.first);
+                return Positioned(
+                  left: screenPos.dx - 8,
+                  top: screenPos.dy - 8,
                   child: Container(
-                    decoration: isSelected
-                        ? BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.orange.withOpacity(0.6),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          )
-                        : null,
-                    child: widget.buildDestinationNumber(marker),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withOpacity(0.5),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          // Layer 5.5: Reference points along the route
+          if (_imageLoaded && _imageRect != null)
+            ...widget.referencePoints.map((refPoint) {
+              final screenPos = _normalizedToScreen(refPoint.position);
+              return Positioned(
+                left: screenPos.dx - 10,
+                top: screenPos.dy - 10,
+                child: GestureDetector(
+                  onTap: () => widget.onReferencePointTap?.call(refPoint),
+                  onLongPress: () =>
+                      widget.onReferencePointDelete?.call(refPoint),
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.orange.withOpacity(0.4),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        'R${refPoint.id}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               );
-            }
-            
-            // Not in calibration mode or locked - static markers
-            return Positioned(
-              left: screenPos.dx - 12,
-              top: screenPos.dy - 12,
-              child: widget.buildDestinationNumber(marker),
-            );
-          }),
+            }),
 
-        // Layer 5: You Are Here marker
-        if (_imageLoaded && _imageRect != null && widget.routePoints.isNotEmpty)
-          Builder(builder: (context) {
-            final screenPos = _normalizedToScreen(widget.routePoints.first);
-            return Positioned(
-              left: screenPos.dx - 45,
-              top: screenPos.dy - 55,
-              child: widget.buildYouAreHereMarker(),
-            );
-          }),
+          // Layer 5.6: Distance labels between points
+          if (_imageLoaded &&
+              _imageRect != null &&
+              widget.showDistances &&
+              widget.routePoints.length >= 2)
+            ...widget.distanceLabels.map((label) {
+              final screenPos = _normalizedToScreen(label.position);
+              return Positioned(
+                left: screenPos.dx - 20,
+                top: screenPos.dy - 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    label.text,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              );
+            }),
 
-        // Layer 6: Destination flag marker
-        if (_imageLoaded && _imageRect != null && widget.routePoints.isNotEmpty)
-          Builder(builder: (context) {
-            final screenPos = _normalizedToScreen(widget.routePoints.last);
-            return Positioned(
-              left: screenPos.dx - 12,
-              top: screenPos.dy - 30,
-              child: widget.buildDestinationFlag(),
-            );
-          }),
+          // Layer 6: Destination flag marker
+          if (_imageLoaded &&
+              _imageRect != null &&
+              widget.routePoints.isNotEmpty)
+            Builder(
+              builder: (context) {
+                final screenPos = _normalizedToScreen(widget.routePoints.last);
+                return Positioned(
+                  left: screenPos.dx - 12,
+                  top: screenPos.dy - 30,
+                  child: widget.buildDestinationFlag(),
+                );
+              },
+            ),
 
-        // Layer 7: Legend
-        Positioned(
-          left: 10,
-          bottom: 10,
-          child: widget.buildLegend(),
-        ),
-      ],
+          // Layer 7: Legend
+          Positioned(left: 10, bottom: 10, child: widget.buildLegend()),
+
+          // Layer 8: Add reference point indicator
+          if (widget.isAddingReferencePoint)
+            Positioned(
+              right: 10,
+              top: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.touch_app, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'Tap to add point',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1283,12 +1776,14 @@ class _RoutePathPainter extends CustomPainter {
     if (routePoints.length < 2 || progress <= 0) return;
 
     // Scale points to image rect (not full canvas)
-    final scaledPoints = routePoints.map((p) => _normalizedToScreen(p)).toList();
+    final scaledPoints = routePoints
+        .map((p) => _normalizedToScreen(p))
+        .toList();
 
     // Create path through all points
     final path = Path();
     path.moveTo(scaledPoints.first.dx, scaledPoints.first.dy);
-    
+
     for (int i = 1; i < scaledPoints.length; i++) {
       path.lineTo(scaledPoints[i].dx, scaledPoints[i].dy);
     }
@@ -1316,7 +1811,7 @@ class _RoutePathPainter extends CustomPainter {
     for (final metric in pathMetrics) {
       final extractLength = metric.length * progress;
       final extractedPath = metric.extractPath(0, extractLength);
-      
+
       canvas.drawPath(extractedPath, glowPaint);
       canvas.drawPath(extractedPath, routePaint);
     }
@@ -1339,7 +1834,7 @@ class _RoutePathPainter extends CustomPainter {
     // Draw dots at intervals
     final dotCount = 4;
     final animatedLength = metric.length * progress;
-    
+
     for (int i = 1; i <= dotCount; i++) {
       final position = (animatedLength * i) / (dotCount + 1);
       if (position <= 0 || position >= animatedLength) continue;
@@ -1365,10 +1860,7 @@ class _CorridorNetworkPainter extends CustomPainter {
   final List<List<Offset>> corridors;
   final Rect imageRect;
 
-  _CorridorNetworkPainter({
-    required this.corridors,
-    required this.imageRect,
-  });
+  _CorridorNetworkPainter({required this.corridors, required this.imageRect});
 
   /// Convert normalized (0-1) coordinate to screen position within imageRect
   Offset _normalizedToScreen(Offset normalized) {
@@ -1388,16 +1880,16 @@ class _CorridorNetworkPainter extends CustomPainter {
 
     for (final corridor in corridors) {
       if (corridor.length < 2) continue;
-      
+
       final startPoint = _normalizedToScreen(corridor.first);
       final path = Path();
       path.moveTo(startPoint.dx, startPoint.dy);
-      
+
       for (int i = 1; i < corridor.length; i++) {
         final point = _normalizedToScreen(corridor[i]);
         path.lineTo(point.dx, point.dy);
       }
-      
+
       canvas.drawPath(path, paint);
     }
 
@@ -1456,7 +1948,10 @@ class _PlaceholderMapPainter extends CustomPainter {
     textPainter.layout();
     textPainter.paint(
       canvas,
-      Offset((size.width - textPainter.width) / 2, size.height / 2 - textPainter.height / 2),
+      Offset(
+        (size.width - textPainter.width) / 2,
+        size.height / 2 - textPainter.height / 2,
+      ),
     );
   }
 
@@ -1464,21 +1959,41 @@ class _PlaceholderMapPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Triangle painter for markers
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-  _TrianglePainter({required this.color});
+/// Model for reference points along the route
+class ReferencePoint {
+  final int id;
+  final Offset position;
+  final String label;
+  final DateTime createdAt;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(size.width / 2, size.height)
-      ..lineTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..close();
-    canvas.drawPath(path, Paint()..color = color);
+  ReferencePoint({
+    required this.id,
+    required this.position,
+    required this.label,
+    required this.createdAt,
+  });
+
+  ReferencePoint copyWith({Offset? position, String? label}) {
+    return ReferencePoint(
+      id: id,
+      position: position ?? this.position,
+      label: label ?? this.label,
+      createdAt: createdAt,
+    );
   }
 
-  @override
-  bool shouldRepaint(covariant _TrianglePainter oldDelegate) => oldDelegate.color != color;
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'x': position.dx,
+    'y': position.dy,
+    'label': label,
+  };
+}
+
+/// Model for distance labels between points
+class DistanceLabel {
+  final Offset position;
+  final String text;
+
+  const DistanceLabel({required this.position, required this.text});
 }

@@ -4,27 +4,40 @@ import 'package:http/http.dart' as http;
 
 /// Service for fetching hospital data from the API
 class HospitalApiService {
-  static const String _baseUrl = 'http://your-api-url.com'; // TODO: Replace with actual API URL
+  // ============================================================
+  // API BASE URL
+  // ============================================================
+  static const String _baseUrl = 'https://innovative-illumination-production-df84.up.railway.app';
+  // ============================================================
 
   static final HospitalApiService _instance = HospitalApiService._internal();
   factory HospitalApiService() => _instance;
   HospitalApiService._internal();
+  
+  // Flag to control whether to use mock data or real API
+  static bool useMockData = false; // Set to false to use real API
 
   /// Fetch active alerts
   /// Returns a list of alerts with level, message, and optional timestamp
   Future<List<Alert>> getAlerts() async {
+    if (useMockData) return _getMockAlerts();
+    
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/alerts'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/alerts'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final alerts = (data['alerts'] as List?)
-            ?.map((a) => Alert.fromJson(a))
-            .toList() ?? [];
-        return alerts;
+        // Handle both {alerts: [...]} and direct array response
+        final alertsList = data is List ? data : (data['alerts'] as List? ?? []);
+        return alertsList.map((a) => Alert.fromJson(a)).toList();
       }
       throw Exception('Failed to load alerts: ${response.statusCode}');
     } catch (e) {
-      // For demo purposes, return mock data when API is unavailable
+      print('Error fetching alerts: $e');
+      // Fallback to mock data on error
       return _getMockAlerts();
     }
   }
@@ -32,18 +45,24 @@ class HospitalApiService {
   /// Fetch maintenance activities
   /// Returns a list of maintenance items with type, location, status, and expected completion
   Future<List<Maintenance>> getMaintenance() async {
+    if (useMockData) return _getMockMaintenance();
+    
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/maintenance'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/maintenance'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final maintenance = (data['maintenance'] as List?)
-            ?.map((m) => Maintenance.fromJson(m))
-            .toList() ?? [];
-        return maintenance;
+        // Handle both {maintenance: [...]} and direct array response
+        final maintenanceList = data is List ? data : (data['maintenance'] as List? ?? []);
+        return maintenanceList.map((m) => Maintenance.fromJson(m)).toList();
       }
       throw Exception('Failed to load maintenance: ${response.statusCode}');
     } catch (e) {
-      // For demo purposes, return mock data when API is unavailable
+      print('Error fetching maintenance: $e');
+      // Fallback to mock data on error
       return _getMockMaintenance();
     }
   }
@@ -51,18 +70,24 @@ class HospitalApiService {
   /// Fetch ward status
   /// Returns a list of wards with current OP number, total beds, and occupied beds
   Future<List<WardStatus>> getWardsStatus() async {
+    if (useMockData) return _getMockWardsStatus();
+    
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/wards/status'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/wards/status'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final wards = (data['wards'] as List?)
-            ?.map((w) => WardStatus.fromJson(w))
-            .toList() ?? [];
-        return wards;
+        // Handle both {wards: [...]} and direct array response
+        final wardsList = data is List ? data : (data['wards'] as List? ?? []);
+        return wardsList.map((w) => WardStatus.fromJson(w)).toList();
       }
       throw Exception('Failed to load wards status: ${response.statusCode}');
     } catch (e) {
-      // For demo purposes, return mock data when API is unavailable
+      print('Error fetching wards status: $e');
+      // Fallback to mock data on error
       return _getMockWardsStatus();
     }
   }

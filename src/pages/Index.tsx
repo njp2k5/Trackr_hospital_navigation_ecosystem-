@@ -3,7 +3,7 @@ import { SummaryCards } from "@/components/dashboard/SummaryCards";
 import { WardsGrid } from "@/components/dashboard/WardsGrid";
 import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { MaintenancePanel } from "@/components/dashboard/MaintenancePanel";
-import { CapacityChart } from "@/components/dashboard/CapacityChart";
+import DashboardMap from "@/components/dashboard/DashboardMap";
 
 const Index = () => {
   return (
@@ -21,7 +21,7 @@ const Index = () => {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <CapacityChart />
+            <DashboardMap />
           </div>
           <div>
             <AlertsPanel />

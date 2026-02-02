@@ -1,4 +1,5 @@
 import { useWardsStatus } from "@/hooks/useHospitalData";
+import { getWardDisplayName } from "@/lib/utils";
 import {
   BarChart,
   Bar,
@@ -16,7 +17,7 @@ export function CapacityChart() {
 
   const chartData =
     data?.wards.map((ward) => ({
-      name: ward.ward_id,
+      name: getWardDisplayName(ward.ward_id),
       occupancy: Math.round((ward.occupied_beds / ward.total_beds) * 100),
       occupied: ward.occupied_beds,
       total: ward.total_beds,
@@ -33,17 +34,17 @@ export function CapacityChart() {
       const data = payload[0].payload;
       return (
         <div className="rounded-lg border border-border bg-card p-3 shadow-lg">
-          <p className="font-medium text-foreground">{label}</p>
+          <p className="font-medium text-black">{label}</p>
           <div className="mt-2 space-y-1 text-sm">
             <p className="text-muted-foreground">
               Occupancy:{" "}
-              <span className="font-medium text-foreground">
+              <span className="font-medium text-black">
                 {data.occupancy}%
               </span>
             </p>
             <p className="text-muted-foreground">
               Beds:{" "}
-              <span className="font-medium text-foreground">
+              <span className="font-medium text-black">
                 {data.occupied}/{data.total}
               </span>
             </p>
@@ -80,12 +81,12 @@ export function CapacityChart() {
             />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 12, fill: "hsl(200 10% 45%)" }}
+              tick={{ fontSize: 12, fill: "#000000" }}
               tickLine={false}
               axisLine={{ stroke: "hsl(180 20% 90%)" }}
             />
             <YAxis
-              tick={{ fontSize: 12, fill: "hsl(200 10% 45%)" }}
+              tick={{ fontSize: 12, fill: "#000000" }}
               tickLine={false}
               axisLine={false}
               domain={[0, 100]}

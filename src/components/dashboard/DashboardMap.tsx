@@ -18,14 +18,14 @@ const destinations: Point[] = [
   { x: 486.7386474609375, y: 265.1591033935547, type: 'destination', name: 'Canteen' },
   { x: 409.7386474609375, y: 240.1591033935547, type: 'destination', name: 'ICU' },
   { x: 425.7386474609375, y: 256.1591033935547, type: 'destination', name: 'Surgery' },
-  { x: 466.7386474609375, y: 340.1591033935547, type: 'destination', name: 'Radiology' },
+  { x: 466.7386474609375, y: 340.1591033935547, type: 'destination', name: 'pond 2' },
   { x: 467.7386474609375, y: 377.1591033935547, type: 'destination', name: 'Laboratory' },
   { x: 426.7386474609375, y: 461.1591033935547, type: 'destination', name: 'Ward A' },
   { x: 364.7386474609375, y: 487.1591033935547, type: 'destination', name: 'Ward B' },
-  { x: 271.7386474609375, y: 446.1591033935547, type: 'destination', name: 'Ward C' },
-  { x: 285.7386474609375, y: 392.1591033935547, type: 'destination', name: 'Ward D' },
+  { x: 271.7386474609375, y: 446.1591033935547, type: 'destination', name: 'paediatrics' },
+  { x: 285.7386474609375, y: 392.1591033935547, type: 'destination', name: 'radeology' },
   { x: 487.7386474609375, y: 307.1591033935547, type: 'destination', name: 'Maternity' },
-  { x: 376.7386474609375, y: 371.1591033935547, type: 'destination', name: 'Pediatrics' },
+  { x: 376.7386474609375, y: 371.1591033935547, type: 'destination', name: 'pond1' },
 ];
 
 const references: Point[] = [
@@ -166,46 +166,83 @@ const references: Point[] = [
 
 const allPoints = [...destinations, ...references];
 
-// Simple A* implementation for shortest path
-function findShortestPath(start: Point, end: Point, waypoints: Point[]): Point[] {
-  // For simplicity, use Euclidean distance and connect nearby points
-  const graph: { [key: string]: { point: Point; neighbors: { point: Point; dist: number }[] } } = {};
+// Helper function to find closest reference point to a given point
+function findClosestReference(point: Point, references: Point[]): Point {
+  let closest = references[0];
+  let minDist = Infinity;
+  references.forEach(ref => {
+    const dist = Math.sqrt((point.x - ref.x) ** 2 + (point.y - ref.y) ** 2);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = ref;
+    }
+  });
+  return closest;
+}
 
-  allPoints.forEach(p => {
+// Helper function to calculate reference density around a point
+function calculateDensity(point: Point, references: Point[], radius: number = 30): number {
+  let count = 0;
+  references.forEach(ref => {
+    const dist = Math.sqrt((point.x - ref.x) ** 2 + (point.y - ref.y) ** 2);
+    if (dist <= radius) {
+      count++;
+    }
+  });
+  return count;
+}
+
+// Modified A* implementation for shortest path with density consideration
+function findShortestPath(start: Point, end: Point, references: Point[]): Point[] {
+  // Find closest reference points to start and end destinations
+  const startRef = findClosestReference(start, references);
+  const endRef = findClosestReference(end, references);
+
+  // Build graph using only reference points
+  const graph: { [key: string]: { point: Point; neighbors: { point: Point; dist: number; densityPenalty: number }[] } } = {};
+
+  references.forEach(p => {
     const key = `${p.x},${p.y}`;
     graph[key] = { point: p, neighbors: [] };
   });
 
-  // Connect points within a certain distance
-  allPoints.forEach(p1 => {
-    allPoints.forEach(p2 => {
+  // Connect reference points within a certain distance and calculate density penalty
+  references.forEach(p1 => {
+    references.forEach(p2 => {
       if (p1 !== p2) {
         const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
         if (dist < 50) { // Connect if close enough
+          // Calculate density penalty: higher density = lower penalty
+          const density1 = calculateDensity(p1, references);
+          const density2 = calculateDensity(p2, references);
+          const avgDensity = (density1 + density2) / 2;
+          if (avgDensity < 2) return; // Insufficient density, cannot take this path segment
+          const densityPenalty = 100 / avgDensity; // Penalty decreases with density
+          
           const key1 = `${p1.x},${p1.y}`;
           const key2 = `${p2.x},${p2.y}`;
-          graph[key1].neighbors.push({ point: p2, dist });
+          graph[key1].neighbors.push({ point: p2, dist, densityPenalty });
         }
       }
     });
   });
 
-  // A* algorithm (simplified)
-  const startKey = `${start.x},${start.y}`;
-  const endKey = `${end.x},${end.y}`;
+  // A* algorithm from closest start ref to closest end ref
+  const startKey = `${startRef.x},${startRef.y}`;
+  const endKey = `${endRef.x},${endRef.y}`;
   const openSet = [startKey];
   const cameFrom: { [key: string]: string } = {};
   const gScore: { [key: string]: number } = {};
   const fScore: { [key: string]: number } = {};
 
-  allPoints.forEach(p => {
+  references.forEach(p => {
     const key = `${p.x},${p.y}`;
     gScore[key] = Infinity;
     fScore[key] = Infinity;
   });
 
   gScore[startKey] = 0;
-  fScore[startKey] = Math.sqrt((start.x - end.x) ** 2 + (start.y - end.y) ** 2);
+  fScore[startKey] = Math.sqrt((startRef.x - endRef.x) ** 2 + (startRef.y - endRef.y) ** 2);
 
   while (openSet.length > 0) {
     const current = openSet.reduce((a, b) => fScore[a] < fScore[b] ? a : b);
@@ -217,18 +254,20 @@ function findShortestPath(start: Point, end: Point, waypoints: Point[]): Point[]
         path.unshift(graph[temp].point);
         temp = cameFrom[temp];
       }
-      return path;
+      // Add start and end destinations to the path
+      return [start, ...path, end];
     }
 
     openSet.splice(openSet.indexOf(current), 1);
 
     graph[current].neighbors.forEach(neighbor => {
       const neighborKey = `${neighbor.point.x},${neighbor.point.y}`;
-      const tentativeGScore = gScore[current] + neighbor.dist;
+      // Cost includes distance and density penalty
+      const tentativeGScore = gScore[current] + neighbor.dist + neighbor.densityPenalty;
       if (tentativeGScore < gScore[neighborKey]) {
         cameFrom[neighborKey] = current;
         gScore[neighborKey] = tentativeGScore;
-        fScore[neighborKey] = gScore[neighborKey] + Math.sqrt((neighbor.point.x - end.x) ** 2 + (neighbor.point.y - end.y) ** 2);
+        fScore[neighborKey] = gScore[neighborKey] + Math.sqrt((neighbor.point.x - endRef.x) ** 2 + (neighbor.point.y - endRef.y) ** 2);
         if (!openSet.includes(neighborKey)) {
           openSet.push(neighborKey);
         }
@@ -322,7 +361,7 @@ export default function DashboardMap() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'white',
+              color: 'black',
               fontSize: '10px',
               fontWeight: 'bold',
             }}

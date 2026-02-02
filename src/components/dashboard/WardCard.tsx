@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn, getWardDisplayName } from "@/lib/utils";
 import { Ward } from "@/lib/api";
 import { Bed, Users } from "lucide-react";
 
@@ -26,8 +26,8 @@ export function WardCard({ ward, onClick, isSelected }: WardCardProps) {
     >
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-            {ward.ward_id}
+          <h3 className="font-semibold text-black group-hover:text-primary transition-colors">
+            {getWardDisplayName(ward.ward_id)}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             OP #{ward.current_op_number}

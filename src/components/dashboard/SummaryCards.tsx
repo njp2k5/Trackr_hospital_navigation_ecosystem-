@@ -1,4 +1,5 @@
 import { useRealtimeSummary, useWardsStatus } from "@/hooks/useHospitalData";
+import { getWardDisplayName } from "@/lib/utils";
 import { StatCard } from "./StatCard";
 import { AlertCircle, Bed, Wrench, Building2 } from "lucide-react";
 
@@ -38,7 +39,7 @@ export function SummaryCards() {
         value={isLoading ? "—" : summary?.wards_over_capacity.length || 0}
         subtitle={
           summary?.wards_over_capacity.length
-            ? summary.wards_over_capacity.join(", ")
+            ? summary.wards_over_capacity.map(getWardDisplayName).join(", ")
             : "All wards normal"
         }
         icon={Building2}

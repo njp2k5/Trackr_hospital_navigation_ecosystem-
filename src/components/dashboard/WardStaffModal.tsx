@@ -1,4 +1,5 @@
 import { useWardStaff } from "@/hooks/useHospitalData";
+import { getWardDisplayName } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +31,7 @@ export function WardStaffModal({
               <Users className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <span className="text-foreground">{wardId} Staff</span>
+              <span className="text-black">{getWardDisplayName(wardId || "")} Staff</span>
               <p className="text-sm font-normal text-muted-foreground mt-0.5">
                 Current shift assignments
               </p>

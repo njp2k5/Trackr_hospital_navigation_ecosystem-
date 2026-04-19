@@ -75,7 +75,7 @@ function MaintenanceItemCard({ item }: { item: MaintenanceItem }) {
 }
 
 export function MaintenancePanel() {
-  const { data, isLoading } = useMaintenance();
+  const { data, isLoading, isError, error } = useMaintenance();
 
   const activeCount =
     data?.maintenance.filter(
@@ -107,6 +107,10 @@ export function MaintenancePanel() {
             Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-16 rounded-lg animate-shimmer" />
             ))
+          ) : isError ? (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
+              Unable to load maintenance data. {error instanceof Error ? error.message : "Check the analytics API connection."}
+            </div>
           ) : data?.maintenance.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10 mb-3">

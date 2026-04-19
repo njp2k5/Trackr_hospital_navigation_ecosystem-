@@ -7,7 +7,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export function DashboardHeader() {
-  const { data: health, isLoading } = useHealthStatus();
+  const { data: health, isLoading, isError } = useHealthStatus();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -47,14 +47,20 @@ export function DashboardHeader() {
         <div className="flex items-center gap-3 rounded-lg bg-card px-4 py-2 shadow-card">
           <StatusIndicator
             status={
-              isLoading ? "offline" : health?.status === "healthy" ? "healthy" : "warning"
+              isLoading
+                ? "offline"
+                : isError
+                  ? "warning"
+                  : health?.status === "healthy"
+                    ? "healthy"
+                    : "warning"
             }
             size="sm"
           />
           <div className="text-sm">
             <span className="text-muted-foreground">System: </span>
             <span className="font-medium text-foreground">
-              {isLoading ? "Connecting..." : health?.status || "Unknown"}
+              {isLoading ? "Connecting..." : isError ? "API Offline" : health?.status || "Unknown"}
             </span>
           </div>
         </div>

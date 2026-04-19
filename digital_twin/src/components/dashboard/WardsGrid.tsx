@@ -5,7 +5,7 @@ import { WardStaffModal } from "./WardStaffModal";
 import { Building2 } from "lucide-react";
 
 export function WardsGrid() {
-  const { data, isLoading } = useWardsStatus();
+  const { data, isLoading, isError, error } = useWardsStatus();
   const [selectedWard, setSelectedWard] = useState<string | null>(null);
 
   return (
@@ -33,6 +33,11 @@ export function WardsGrid() {
             ? Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="h-40 rounded-xl animate-shimmer" />
               ))
+            : isError ? (
+                <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
+                  Unable to load ward data. {error instanceof Error ? error.message : "Check the analytics API connection."}
+                </div>
+              )
             : data?.wards.map((ward) => (
                 <WardCard
                   key={ward.ward_id}

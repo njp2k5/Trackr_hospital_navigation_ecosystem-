@@ -1,4 +1,6 @@
-const API_BASE = "https://innovative-illumination-production-df84.up.railway.app";
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001"
+).replace(/\/$/, "");
 
 export interface Ward {
   ward_id: string;
@@ -65,7 +67,7 @@ export interface HealthStatus {
 async function fetchApi<T>(endpoint: string): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`);
   if (!response.ok) {
-    throw new Error(`API Error: ${response.statusText}`);
+    throw new Error(`API Error ${response.status}: ${endpoint}`);
   }
   return response.json();
 }

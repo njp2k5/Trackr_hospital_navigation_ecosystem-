@@ -61,7 +61,7 @@ function AlertItem({ alert }: { alert: Alert }) {
 }
 
 export function AlertsPanel() {
-  const { data, isLoading } = useAlerts();
+  const { data, isLoading, isError, error } = useAlerts();
 
   const criticalCount =
     data?.alerts.filter((a) => a.level === "critical").length || 0;
@@ -105,6 +105,10 @@ export function AlertsPanel() {
                 className="h-20 rounded-lg animate-shimmer"
               />
             ))
+          ) : isError ? (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
+              Unable to load alerts. {error instanceof Error ? error.message : "Check the analytics API connection."}
+            </div>
           ) : data?.alerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10 mb-3">

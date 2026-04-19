@@ -7,7 +7,11 @@ class HospitalApiService {
   // ============================================================
   // API BASE URL
   // ============================================================
-  static const String _baseUrl = 'https://innovative-illumination-production-df84.up.railway.app';
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:8001',
+  );
+  static const String _baseUrl = baseUrl;
   // ============================================================
 
   static final HospitalApiService _instance = HospitalApiService._internal();

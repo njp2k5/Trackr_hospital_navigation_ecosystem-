@@ -1,0 +1,30 @@
+services:
+  auth-api:
+    build:
+      context: ./serverside
+    container_name: trackr-auth-api
+    env_file:
+      - ./serverside/.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/test.db
+    volumes:
+      - auth_data:/app/data
+
+  analytics-api:
+    build:
+      context: ./analytics_dashboard
+    container_name: trackr-analytics-api
+
+  api-gateway:
+    image: nginx:1.27-alpine
+    container_name: trackr-api-gateway
+    depends_on:
+      - auth-api
+      - analytics-api
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  auth_data:

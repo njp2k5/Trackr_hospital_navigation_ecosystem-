@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hospital_nav_app/screens/find_route_screen.dart';
 import 'package:hospital_nav_app/screens/hospital_info_screen.dart';
 import 'package:hospital_nav_app/screens/street_map_screen.dart';
+import 'package:hospital_nav_app/services/hospital_api_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -370,7 +371,7 @@ class _LocationsSectionState extends State<_LocationsSection> {
     try {
       final response = await http.get(
         Uri.parse(
-          'https://innovative-illumination-production-df84.up.railway.app/wards/status',
+          '${HospitalApiService.baseUrl}/wards/status',
         ),
       );
 
